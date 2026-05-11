@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>GSIH Malang Retrofit - 3D Immersive Mockup</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body { margin: 0; overflow: hidden; background-color: #000; font-family: 'Inter', sans-serif; touch-action: none; }
+        #canvas-container { width: 100vw; height: 100vh; display: block; }
+        
+        /* Loaders */
+        #opening-loader, #closing-loader {
+            position: absolute;
+            inset: 0;
+            background-color: #050505;
+            background-image: radial-gradient(circle at center, rgba(234, 179, 8, 0.1) 0%, transparent 50%), linear-gradient(rgba(255,255,255,0.03) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,0.03) 1px, transparent 1px);
+            background-size: 100% 100%, 40px 40px, 40px 40px;
+            z-index: 100;
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            transition: opacity 1.5s ease-in-out, visibility 1.5s;
+        }
+
+        /* Menu Blocker */
+        #blocker {
+            position: absolute;
+            width: 100%;
+            height: 100%;
+            background-color: rgba(0,0,0,0.7);
+            background-image: radial-gradient(circle at 50% 0%, rgba(16, 185, 129, 0.15) 0%, transparent 70%);
+            display: flex;
+            flex-direction: column;
+            align-items: center;
+            justify-content: center;
+            z-index: 50;
+            backdrop-filter: blur(10px);
+        }
+
+        /* HUD & Info */
+        .hud-overlay { position: absolute; bottom: 20px; left: 20px; pointer-events: none; z-index: 10; }
+        
+        /* Presentation UI Styles */
+        #presentation-ui {
+            position: absolute; top: 0; left: 0; width: 100%; height: 100%;
+            pointer-events: none; z-index: 40; display: none; flex-direction: column;
+            justify-content: space-between; padding: 15px; box-sizing: border-box;
+            background: linear-gradient(90deg, rgba(0,0,0,0.6) 0%, transparent 40%);
+        }
+        .slide-panel {
+            pointer-events: auto; width: 100%; max-width: 450px;
+            background: linear-gradient(145deg, rgba(10, 10, 12, 0.95) 0%, rgba(234, 179, 8, 0.05) 100%);
+            border: 1px solid rgba(234, 179, 8, 0.3);
+            border-left: 4px solid #eab308; padding: 25px; border-radius: 8px;
+            backdrop-filter: blur(15px); color: white;
+            box-shadow: 0 20px 50px rgba(0,0,0,0.5), inset 0 0 20px rgba(234, 179, 8, 0.05);
+            transform: translateX(-50px); opacity: 0; transition: all 0.5s cubic-bezier(0.4, 0, 0.2, 1);
+            margin-top: 10px;
+            position: relative;
+            max-height: 75vh;
+            overflow-y: auto;
+            -ms-overflow-style: none;  /* IE and Edge */
+            scrollbar-width: none;  /* Firefox */
+        }
+        .slide-panel::-webkit-scrollbar { display: none; }
+        .slide-panel::before {
+            content: ''; position: absolute; top: 0; left: -100%; width: 50%; height: 100%;
+            background: linear-gradient(90deg, transparent, rgba(234, 179, 8, 0.1), transparent);
+            animation: scanline 4s infinite linear;
+        }
+        @keyframes scanline { 100% { left: 200%; } }
+        
+        @media(min-width: 768px) {
+            #presentation-ui { padding: 40px; }
+            .slide-panel { margin-top: 0; padding: 30px; }
+        }
+        .slide-panel.visible { transform: translateX(0); opacity: 1; }
+        
+        .culture-badge {
+            display: none; background: rgba(234, 179, 8, 0.15); border: 1px solid rgba(234, 179, 8, 0.5);
+            color: #fde047; padding: 4px 10px; border-radius: 4px; font-size: 0.65rem;
+            text-transform: uppercase; letter-spacing: 0.1em; font-weight: bold; margin-bottom: 15px;
+            align-items: center; gap: 6px; width: fit-content;
+        }
+        .culture-badge.active { display: flex; animation: pulseBadge 2s infinite; }
+        @keyframes pulseBadge { 0%, 100% { box-shadow: 0 0 0 rgba(234, 179, 8, 0); } 50% { box-shadow: 0 0 10px rgba(234, 179, 8, 0.3); } }
+
+        .tour-controls {
+            pointer-events: auto; align-self: flex-end; display: flex; gap: 10px; flex-wrap: wrap;
+            align-items: center; justify-content: center; background: rgba(0,0,0,0.8); padding: 10px 15px;
+            border-radius: 20px; backdrop-filter: blur(5px); border: 1px solid rgba(255,255,255,0.1);
+            max-width: 100%;
+        }
+
+        /* Mobile Controls */
+        #mobile-controls {
+            display: none; position: absolute; bottom: 20px; right: 20px; z-index: 15;
+            width: 120px; height: 120px;
+        }
+        .d-pad-btn {
+            position: absolute; width: 40px; height: 40px; background: rgba(255,255,255,0.2);
+            border-radius: 5px; display: flex; align-items: center; justify-content: center; color: white; font-weight: bold;
+        }
+        .d-pad-btn:active { background: rgba(16, 185, 129, 0.5); }
+        
+        /* Artwork Games Overlay */
+        #artwork-overlay {
+            position: absolute; inset: 0; background: rgba(0,0,0,0.95); z-index: 60;
+            display: none; flex-direction: column; align-items: center; justify-content: center;
+        }
+        .art-view { display: none; width: 100%; max-width: 600px; text-align: center; }
+        .art-view.active { display: block; animation: fadeIn 0.8s ease-out; }
+        @keyframes fadeIn { from { opacity: 0; transform: translateY(20px) scale(0.95); } to { opacity: 1; transform: translateY(0) scale(1); } }
+
+        /* Custom Interactive Elements */
+        .node-btn { width: 50px; height: 50px; border-radius: 50%; border: 2px solid #555; background: #222; transition: all 0.3s; cursor: pointer; }
+        .node-btn.active { border-color: #eab308; background: #eab308; box-shadow: 0 0 20px #eab308; }
+
+        input[type=range] { -webkit-appearance: none; width: 100%; background: transparent; }
+        input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; height: 24px; width: 24px; border-radius: 50%; background: #eab308; cursor: pointer; margin-top: -10px; box-shadow: 0 0 10px #eab308; }
+        input[type=range]::-webkit-slider-runnable-track { width: 100%; height: 4px; cursor: pointer; background: #444; border-radius: 2px; }
+
+    </style>
+</head>
+<body>
+
+    <!-- VR Walkthrough HUD Overlay (Active during Intro) -->
+    <div id="vr-overlay" class="absolute inset-0 pointer-events-none z-[45] hidden flex-col items-center justify-between p-10">
+        <div class="w-full flex justify-between text-emerald-400 font-mono text-xs md:text-sm opacity-80 drop-shadow-[0_0_5px_#10b981]">
+            <span class="animate-pulse">REC // VR_SIMULATION</span>
+            <span>GSIH_LOBBY_TRACKING</span>
+        </div>
+        <div class="w-64 h-64 border border-emerald-500/30 rounded-full flex items-center justify-center relative">
+            <div class="w-1 h-6 bg-emerald-500/60 absolute top-0 shadow-[0_0_5px_#10b981]"></div>
+            <div class="w-1 h-6 bg-emerald-500/60 absolute bottom-0 shadow-[0_0_5px_#10b981]"></div>
+            <div class="w-6 h-1 bg-emerald-500/60 absolute left-0 shadow-[0_0_5px_#10b981]"></div>
+            <div class="w-6 h-1 bg-emerald-500/60 absolute right-0 shadow-[0_0_5px_#10b981]"></div>
+            <div class="w-3 h-3 bg-emerald-500/50 rounded-full animate-ping"></div>
+        </div>
+        <div class="w-full flex justify-between text-emerald-400 font-mono text-xs md:text-sm opacity-80 drop-shadow-[0_0_5px_#10b981]">
+            <span>TARGET: GARUDA_ARTIFACT</span>
+            <span>STATUS: OPTIMAL</span>
+        </div>
+    </div>
+
+    <!-- Cinematic Opening Loader -->
+    <div id="opening-loader">
+        <div class="absolute inset-0 bg-[linear-gradient(rgba(234,179,8,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(234,179,8,0.05)_1px,transparent_1px)] bg-[size:40px_40px] z-0"></div>
+        <div class="z-10 flex flex-col items-center">
+            <p class="text-yellow-500 tracking-[0.4em] text-xs font-bold uppercase mb-4 shadow-yellow-500/50 drop-shadow-md">KOMDIGI - MCC Malang</p>
+            <h1 class="text-3xl md:text-5xl font-bold tracking-widest mb-6 text-white text-center leading-tight">
+                GARUDA SPARK <br/>INNOVATION HUB
+                <span class="block text-yellow-500 font-light text-xl md:text-3xl mt-4 flex items-center justify-center gap-4">
+                    <span class="h-px w-8 md:w-16 bg-yellow-500/50"></span>
+                    THE HEART OF CULTURE
+                    <span class="h-px w-8 md:w-16 bg-yellow-500/50"></span>
+                </span>
+            </h1>
+            <div class="w-72 h-1 bg-gray-800 rounded overflow-hidden relative mt-4">
+                <div id="loader-bar" class="h-full bg-yellow-500 w-0 transition-all duration-300 shadow-[0_0_15px_#eab308]"></div>
+            </div>
+            <p id="loader-text" class="mt-8 text-xs tracking-[0.3em] text-yellow-400/80 uppercase animate-pulse">Weaving Heritage & Green Tech...</p>
+        </div>
+    </div>
+
+    <!-- Cinematic Closing Loader -->
+    <div id="closing-loader" class="opacity-0 invisible relative z-50">
+        <div class="absolute inset-0 bg-[linear-gradient(rgba(234,179,8,0.05)_1px,transparent_1px),linear-gradient(90deg,rgba(234,179,8,0.05)_1px,transparent_1px)] bg-[size:40px_40px] z-0 pointer-events-none"></div>
+        
+        <div class="z-10 flex flex-col items-center px-4 w-full max-w-4xl mx-auto">
+            <div class="w-16 h-16 border-4 border-yellow-500 rounded-full flex items-center justify-center mb-6 shadow-[0_0_30px_rgba(234,179,8,0.3)]">
+                <div class="w-8 h-8 bg-yellow-500 rounded-full animate-ping"></div>
+            </div>
+            <h1 class="text-4xl md:text-6xl font-bold tracking-tight mb-4 text-white text-center">THE FUTURE IS BUILT.</h1>
+            <p class="text-yellow-400 tracking-[0.3em] uppercase text-sm md:text-lg font-light text-center">GSIH Malang: The Heritage Benchmark</p>
+
+            <div class="mt-8 md:mt-12 text-center w-full relative">
+                <div class="absolute -inset-4 bg-yellow-900/10 blur-xl z-0 rounded-full"></div>
+                <div class="relative z-10 border-t border-b border-yellow-500/30 py-8 bg-black/40 backdrop-blur-md rounded-2xl shadow-2xl p-6 md:p-10">
+                    <p class="text-gray-300 leading-relaxed text-sm md:text-lg">
+                        KOMDIGI isn't just updating an infrastructure space.
+                    </p>
+                    <p class="text-white font-bold mt-4 text-base md:text-2xl tracking-wide leading-relaxed">
+                        You are forging the physical pulse of Indonesia's digital economy.<br/>
+                        <span class="text-yellow-400">Zero-waste Fjäll engineering intertwined with deep cultural reverence.</span>
+                    </p>
+                    <p class="text-yellow-500 text-xs md:text-sm mt-6 uppercase tracking-widest font-bold">
+                        The legacy of tomorrow starts today.
+                    </p>
+                </div>
+            </div>
+
+            <button id="btn-restart" class="mt-12 z-20 relative border border-yellow-500 text-yellow-500 hover:bg-yellow-500 hover:text-white px-10 py-4 rounded font-bold uppercase tracking-[0.2em] text-xs transition-all shadow-[0_0_15px_rgba(234,179,8,0.2)] hover:shadow-[0_0_25px_rgba(234,179,8,0.5)]">Return to Hub</button>
+        </div>
+    </div>
+
+    <!-- UI Overlays -->
+    <div id="blocker" style="display: none;">
+        <div id="instructions" class="p-6 md:p-10 border border-gray-700/50 rounded-2xl bg-black/70 hover:bg-black/80 transition-all w-11/12 max-w-lg shadow-[0_0_50px_rgba(0,0,0,0.8)] backdrop-blur-xl relative overflow-hidden">
+            <div class="absolute top-0 left-0 w-full h-1 bg-gradient-to-r from-transparent via-yellow-500 to-transparent"></div>
+            <p class="text-yellow-500 font-bold tracking-[0.2em] text-[10px] uppercase mb-2">KOMDIGI Initiative</p>
+            <h1 class="text-3xl md:text-5xl font-bold tracking-tight mb-2 text-white">GARUDA SPARK <br/><span class="text-yellow-400 font-light">INNOVATION HUB</span></h1>
+            <p class="text-gray-400 mb-8 uppercase tracking-widest text-xs">Cultural Innovation Proposal - MCC</p>
+            <div class="space-y-4 text-left bg-gray-900/60 p-5 md:p-6 rounded-xl mb-6 text-sm border border-gray-800">
+                <button id="btn-tour" class="w-full bg-yellow-600 hover:bg-yellow-500 text-black font-bold py-4 px-5 rounded-lg transition-all flex justify-between items-center group shadow-[0_0_20px_rgba(234,179,8,0.3)] hover:shadow-[0_0_30px_rgba(234,179,8,0.5)]">
+                    <span class="tracking-wide">Launch Cultural Tour</span>
+                    <span class="group-hover:translate-x-2 transition-transform">→</span>
+                </button>
+                <button id="btn-roam" class="w-full bg-black/50 border border-gray-600 hover:border-yellow-500 text-gray-300 hover:text-white font-bold py-4 px-5 rounded-lg transition-colors flex justify-between items-center group">
+                    <span class="tracking-wide">Interactive Free Roam</span>
+                    <span class="opacity-0 group-hover:opacity-100 transition-opacity">⌖</span>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Presentation UI -->
+    <div id="presentation-ui">
+        <div class="slide-panel visible" id="slide-panel">
+            <div id="culture-badge" class="culture-badge active">
+                <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" fill="currentColor" viewBox="0 0 16 16"><path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2zM8 1.918l-.797.161A4.002 4.002 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4.002 4.002 0 0 0-3.203-3.92L8 1.917zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5.002 5.002 0 0 1 13 6c0 .88.32 4.2 1.22 6z"/></svg>
+                Cultural Artifact Display
+            </div>
+            <p class="text-yellow-500 font-bold tracking-widest text-[10px] md:text-xs uppercase mb-1 md:mb-2" id="slide-subtitle">Phase</p>
+            <h2 class="text-3xl md:text-4xl font-bold mb-3 md:mb-5 text-white tracking-tight" id="slide-title">Title</h2>
+            <p class="text-gray-300 text-xs md:text-sm leading-relaxed mb-5 md:mb-6" id="slide-desc">Description</p>
+            
+            <div id="art-trigger-container" class="mb-5">
+                <button id="btn-view-art" class="w-full bg-yellow-900/30 border border-yellow-500 hover:bg-yellow-500 hover:text-black text-white py-3 rounded-lg text-xs font-bold uppercase tracking-widest transition-all shadow-[0_0_15px_rgba(234,179,8,0.2)]">Unlock Artifact Logic</button>
+            </div>
+
+            <div class="bg-black/60 p-4 md:p-5 rounded-lg text-xs md:text-sm border border-gray-700/50" id="slide-stats">
+            </div>
+        </div>
+        <div class="tour-controls">
+            <button id="tour-prev" class="text-gray-400 hover:text-white px-2 md:px-3 py-2 uppercase text-[10px] md:text-xs font-bold tracking-wider">&larr; Prev</button>
+            <div class="h-4 md:h-6 w-px bg-gray-700"></div>
+            <button id="tour-next" class="text-yellow-400 hover:text-yellow-300 px-2 md:px-3 py-2 uppercase text-[10px] md:text-xs font-bold tracking-wider">Next Slide &rarr;</button>
+            <div class="h-4 md:h-6 w-px bg-gray-700"></div>
+            <button id="tour-exit" class="text-red-400 hover:text-red-300 px-2 md:px-3 py-2 uppercase text-[10px] md:text-xs font-bold tracking-wider">Exit</button>
+        </div>
+    </div>
+
+    <!-- Interactive Artwork Games -->
+    <div id="artwork-overlay">
+        <div class="bg-gray-900/90 border border-yellow-500 p-8 rounded-2xl max-w-lg w-11/12 text-center shadow-[0_0_50px_rgba(234,179,8,0.2)] relative overflow-hidden backdrop-blur-xl">
+            
+            <!-- Art Game 0: Batik Alignment -->
+            <div id="art-view-0" class="art-view">
+                <h2 class="text-2xl md:text-3xl font-bold text-white mb-2 font-serif">Batik Fractal Alignment</h2>
+                <p class="text-gray-400 text-xs mb-6 uppercase tracking-wider">Tap the rings to synchronize the heritage pattern.</p>
+                <div class="relative w-[180px] h-[180px] mx-auto mb-6 cursor-pointer" onclick="rotateBatik()">
+                    <div id="batik-ring1" class="absolute inset-0 border-[6px] border-yellow-500 rounded-full border-t-transparent transition-transform duration-300" style="transform: rotate(90deg)"></div>
+                    <div id="batik-ring2" class="absolute inset-4 border-[6px] border-emerald-500 rounded-full border-b-transparent transition-transform duration-300" style="transform: rotate(180deg)"></div>
+                    <div id="batik-ring3" class="absolute inset-8 border-[6px] border-yellow-200 rounded-full border-l-transparent transition-transform duration-300" style="transform: rotate(270deg)"></div>
+                </div>
+                <div id="art-story-0" class="hidden text-left bg-black/50 p-4 rounded border border-gray-700">
+                    <p class="text-gray-300 text-sm leading-relaxed"><span class="text-yellow-400 font-bold">Aligned.</span> A projection merging the ancient curves of Malang's batik with parametric algorithms. GSIH acts as the loom where local heritage and digital innovation are woven together.</p>
+                </div>
+            </div>
+
+            <!-- Art Game 1: Topeng Sync -->
+            <div id="art-view-1" class="art-view">
+                <h2 class="text-2xl md:text-3xl font-bold text-white mb-2 font-serif">Topeng Panji Matrix</h2>
+                <p class="text-gray-400 text-xs mb-6 uppercase tracking-wider">Hold the button to decrypt the data matrix.</p>
+                <div class="w-24 h-32 mx-auto mb-6 bg-gray-800 rounded-[50%_50%_40%_40%] relative overflow-hidden border border-gray-600">
+                    <div id="topeng-fill" class="absolute bottom-0 w-full bg-yellow-500 transition-all" style="height: 0%"></div>
+                </div>
+                <button id="btn-sync" onmousedown="startSync()" onmouseup="stopSync()" onmouseleave="stopSync()" ontouchstart="startSync()" ontouchend="stopSync()" class="w-full py-3 bg-gray-700 text-white font-bold rounded mb-4 active:bg-yellow-600 transition-colors">HOLD TO DECRYPT</button>
+                <div id="art-story-1" class="hidden text-left bg-black/50 p-4 rounded border border-gray-700 mt-4">
+                    <p class="text-gray-300 text-sm leading-relaxed"><span class="text-yellow-400 font-bold">Decrypted.</span> Inspired by the iconic Topeng Malangan mask. It reflects the adaptability of Fjäll EPS walls—protecting the creative spirit within, while presenting a bold face to the future.</p>
+                </div>
+            </div>
+
+            <!-- Art Game 2: Wayang Focus (Crystal Gunungan) -->
+            <div id="art-view-2" class="art-view">
+                <h2 class="text-2xl md:text-3xl font-bold text-white mb-2 font-serif">Crystal Wayang</h2>
+                <p class="text-gray-400 text-xs mb-6 uppercase tracking-wider">Adjust the slider to focus the refractive light.</p>
+                <div class="relative w-32 h-40 mx-auto mb-6 bg-gray-800 rounded border border-gray-600 flex items-center justify-center overflow-hidden">
+                    <div id="wayang-glow" class="absolute inset-0 bg-cyan-400 opacity-0 blur-2xl transition-opacity duration-200"></div>
+                    <svg id="wayang-svg" class="w-20 h-28 relative z-10 transition-all duration-200 text-cyan-50" style="opacity: 0;" fill="none" stroke="currentColor" viewBox="0 0 100 140">
+                        <path d="M50 5 C65 40, 95 80, 90 120 C85 140, 15 140, 10 120 C5 80, 35 40, 50 5 Z" stroke-width="2" fill="rgba(255,255,255,0.15)"/>
+                        <path d="M50 20 C60 45, 80 75, 75 110 C70 130, 30 130, 25 110 C20 75, 40 45, 50 20 Z" stroke-width="1" fill="rgba(255,255,255,0.3)"/>
+                        <circle cx="50" cy="80" r="10" stroke-width="1" fill="rgba(255,255,255,0.5)"/>
+                        <path d="M40 100 L60 100 M45 110 L55 110" stroke-width="2" stroke-linecap="round"/>
+                        <path d="M50 20 L50 70 M50 90 L50 130" stroke-width="1" stroke-dasharray="2 2"/>
+                    </svg>
+                </div>
+                <input type="range" min="0" max="100" value="0" oninput="focusWayang(this.value)" class="mb-4">
+                <div id="art-story-2" class="hidden text-left bg-black/50 p-4 rounded border border-gray-700 mt-4">
+                    <p class="text-gray-300 text-sm leading-relaxed"><span class="text-yellow-400 font-bold">Focused.</span> Cast in pure 12mm acrylic, this modern Wayang Gunungan casts no dark shadows, only refracted light. It demonstrates achieving profound impact through smarter, lighter materials.</p>
+                </div>
+            </div>
+
+            <!-- Art Game 3: Candi Hologram -->
+            <div id="art-view-3" class="art-view">
+                <h2 class="text-2xl md:text-3xl font-bold text-white mb-2 font-serif">Singhasari Hologram</h2>
+                <p class="text-gray-400 text-xs mb-6 uppercase tracking-wider">Activate the 3 structural nodes.</p>
+                <div class="flex justify-center gap-4 mb-8">
+                    <button class="node-btn" onclick="toggleNode(this)"></button>
+                    <button class="node-btn" onclick="toggleNode(this)"></button>
+                    <button class="node-btn" onclick="toggleNode(this)"></button>
+                </div>
+                <div id="art-story-3" class="hidden text-left bg-black/50 p-4 rounded border border-gray-700">
+                    <p class="text-gray-300 text-sm leading-relaxed"><span class="text-yellow-400 font-bold">Powered.</span> A weightless homage to the great Singhasari temples. Just as this hologram hovers, our Zero-Screw protocol ensures MCC's foundation remains completely untouched.</p>
+                </div>
+            </div>
+
+            <!-- Art Game 4: Garuda Flight -->
+            <div id="art-view-4" class="art-view">
+                <h2 class="text-2xl md:text-3xl font-bold text-white mb-2 font-serif">The 35-Day Obelisk</h2>
+                <p class="text-gray-400 text-xs mb-6 uppercase tracking-wider">Tap rapidly to accelerate the installation velocity.</p>
+                <div class="w-full bg-gray-800 h-4 rounded mb-6 overflow-hidden">
+                    <div id="flight-bar" class="bg-yellow-500 h-full w-0 transition-all duration-100"></div>
+                </div>
+                <button id="btn-flight" onclick="tapFlight()" class="w-full py-4 bg-emerald-700 text-white font-bold rounded mb-4 active:scale-95 transition-transform">ACCELERATE</button>
+                <div id="art-story-4" class="hidden text-left bg-black/50 p-4 rounded border border-gray-700 mt-4">
+                    <p class="text-gray-300 text-sm leading-relaxed"><span class="text-yellow-400 font-bold">Max Velocity.</span> A kinetic representation of the rapid 35-night deployment schedule. A testament to how KOMDIGI will launch the future of Malang without hesitation or delay.</p>
+                </div>
+            </div>
+
+            <div class="mt-6 border-t border-gray-700 pt-6">
+                <button onclick="closeArtwork()" id="btn-close-art" class="w-full bg-gray-800 text-gray-500 font-bold py-3 rounded cursor-not-allowed transition-all border border-gray-700" disabled>Unlock To Proceed</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- HUD Overlay -->
+    <div class="hud-overlay" style="display: none;">
+        <div class="bg-black/80 border border-yellow-900/50 p-4 rounded-xl backdrop-blur-md shadow-[0_0_20px_rgba(234,179,8,0.1)]">
+            <h2 class="text-white font-bold text-sm md:text-lg mb-2 flex items-center gap-2">
+                <svg xmlns="http://www.w3.org/2000/svg" class="w-4 h-4 text-yellow-500" fill="currentColor" viewBox="0 0 16 16"><path d="M8 16A8 8 0 1 0 8 0a8 8 0 0 0 0 16zm.93-9.412-1 4.705c-.07.34.029.533.304.533.194 0 .487-.07.686-.246l-.088.416c-.287.346-.92.598-1.465.598-.703 0-1.002-.422-.808-1.319l.738-3.468c.064-.293.006-.399-.287-.47l-.451-.081.082-.381 2.29-.287zM8 5.5a1 1 0 1 1 0-2 1 1 0 0 1 0 2z"/></svg>
+                GSIH Malang Environment
+            </h2>
+            <div class="space-y-1 mb-3">
+                <div class="flex justify-between text-[10px] md:text-xs">
+                    <span class="text-gray-400">Cultural Integration</span>
+                    <span class="text-yellow-400 font-mono">100% ALIGNED</span>
+                </div>
+                <div class="flex justify-between text-[10px] md:text-xs">
+                    <span class="text-gray-400">Acoustic EPS Isolation</span>
+                    <span class="text-emerald-400 font-mono">ACTIVE</span>
+                </div>
+            </div>
+            <div class="flex items-center gap-2 text-gray-500 text-xs md:text-sm border-t border-gray-800 pt-2">
+                <div class="w-2 h-2 rounded-full bg-yellow-500 animate-pulse"></div>
+                Free Roam Simulation
+            </div>
+        </div>
+    </div>
+
+    <div id="mobile-controls">
+        <div class="d-pad-btn" style="top: 0; left: 40px;" id="btn-up">W</div>
+        <div class="d-pad-btn" style="top: 40px; left: 0;" id="btn-left">A</div>
+        <div class="d-pad-btn" style="top: 40px; left: 80px;" id="btn-right">D</div>
+        <div class="d-pad-btn" style="top: 80px; left: 40px;" id="btn-down">S</div>
+    </div>
+
+    <!-- 3D Canvas Container -->
+    <div id="canvas-container"></div>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+
+    <script>
+        // Detection
+        const isMobile = /Android|webOS|iPhone|iPad|iPod|BlackBerry|IEMobile|Opera Mini/i.test(navigator.userAgent);
+        
+        let camera, scene, renderer;
+        let prevTime = performance.now();
+        const velocity = new THREE.Vector3();
+        const direction = new THREE.Vector3();
+        
+        let moveForward = false, moveBackward = false, moveLeft = false, moveRight = false;
+
+        // Tour Variables
+        let isIntroSequence = false;
+        let introPhase = 1;
+        let isTourMode = false;
+        let isFreeRoam = false;
+        let currentSlide = 0;
+        let targetCamPos = new THREE.Vector3();
+        let targetCamLookAt = new THREE.Vector3();
+        let currentLookAt = new THREE.Vector3();
+
+        // Control Variables
+        let pitch = 0;
+        let yaw = 0;
+        let touchStartX = 0;
+        let touchStartY = 0;
+        let isPointerLocked = false;
+
+        const slides = [
+            {
+                subtitle: "KOMDIGI x GreenShift", title: "The Cultural Core",
+                desc: "Transforming MCC's 3rd floor into the digital and cultural heartbeat of Malang. We merge a high-tech aesthetic with deep respect for local heritage.",
+                stats: `<div class="flex justify-between mb-2"><span class="text-gray-400">Total Innovation Area</span><span class="font-bold text-white">~245 sqm</span></div>
+                        <div class="flex justify-between"><span class="text-gray-400">Hub Location</span><span class="font-bold text-yellow-400">Malang Creative Center</span></div>`,
+                camPos: new THREE.Vector3(0, 2.5, 7), lookAt: new THREE.Vector3(0, 1.5, 0), artId: 0, hasArt: true
+            },
+            {
+                subtitle: "Material Heritage", title: "The Fjäll Foundation",
+                desc: "Replacing obsolete brick with advanced 20cm Fjäll EPS modular panels. Built slab-to-slab (3.6m), providing absolute acoustic privacy for creative minds.",
+                stats: `<div class="flex justify-between mb-2"><span class="text-gray-400">Thermal/Acoustic Barrier</span><span class="font-bold text-white">20cm Smart EPS</span></div>
+                        <div class="flex justify-between"><span class="text-gray-400">Material Origin</span><span class="font-bold text-emerald-400">100% Local Sourcing</span></div>`,
+                camPos: new THREE.Vector3(-3, 1.6, 6), lookAt: new THREE.Vector3(-6, 1.6, 5), artId: 1, hasArt: true
+            },
+            {
+                subtitle: "Eco-Value Engineering", title: "Transparent Traditions",
+                desc: "Employing high-impact 12mm clear cast acrylic to preserve an open, collaborative feel. This approach protects KOMDIGI's budget while maximizing installation speed.",
+                stats: `<div class="flex justify-between mb-2"><span class="text-gray-400">Transparency Medium</span><span class="font-bold text-white">12mm Cast Acrylic</span></div>
+                        <div class="flex justify-between"><span class="text-gray-400">Implementation Speed</span><span class="font-bold text-yellow-400">Maximized</span></div>`,
+                camPos: new THREE.Vector3(3, 1.6, -4), lookAt: new THREE.Vector3(6, 1.6, -6), artId: 2, hasArt: true
+            },
+            {
+                subtitle: "Non-Destructive Hub", title: "Honoring The Ground",
+                desc: "GSIH respects the MCC infrastructure. Our puzzle-fit, snap-together flooring assembly guarantees we leave zero scars on the building's original foundation.",
+                stats: `<div class="flex justify-between mb-2"><span class="text-gray-400">Flooring Interface</span><span class="font-bold text-white">Premium SPC (Snap-Fit)</span></div>
+                        <div class="flex justify-between"><span class="text-gray-400">Structural Damage</span><span class="font-bold text-emerald-400">Zero Drilling</span></div>`,
+                camPos: new THREE.Vector3(6, 1.8, 3), lookAt: new THREE.Vector3(6.5, 0.5, 2.5), artId: 3, hasArt: true 
+            },
+            {
+                subtitle: "Sustainable Progress", title: "Comprehensive Budget",
+                desc: "By eliminating wet-work, dust, and curing delays, our modular approach guarantees operational readiness. This revised budget encompasses fully modular FF&E and Civil/MEP.",
+                stats: `<div class="flex justify-between mb-2"><span class="text-gray-400">Civil & MEP (Inc PPN)</span><span class="font-bold text-white">Rp 516,111,150</span></div>
+                        <div class="flex justify-between mb-3"><span class="text-gray-400">FF&E Modular Package</span><span class="font-bold text-white">Rp 150,161,022</span></div>
+                        <div class="flex justify-between mt-3 pt-3 border-t border-gray-700/50"><span class="text-gray-400 uppercase text-xs mt-1">Grand Total</span><span class="font-bold text-yellow-400 text-lg">Rp 666,272,172</span></div>`,
+                camPos: new THREE.Vector3(-5, 6, 8), lookAt: new THREE.Vector3(0, 0, 0), artId: 4, hasArt: true
+            }
+        ];
+
+        window.onload = function () { initLoader(); };
+
+        function initLoader() {
+            let progress = 0;
+            const bar = document.getElementById('loader-bar');
+            
+            const int = setInterval(() => {
+                progress += Math.random() * 15;
+                if(progress > 100) progress = 100;
+                bar.style.width = progress + '%';
+                
+                if(progress === 100) {
+                    clearInterval(int);
+                    setTimeout(() => {
+                        document.getElementById('opening-loader').style.opacity = '0';
+                        setTimeout(() => {
+                            document.getElementById('opening-loader').style.visibility = 'hidden';
+                            init3D();
+                            startIntroSequence();
+                            animate();
+                        }, 1500);
+                    }, 500);
+                }
+            }, 150);
+        }
+
+        function init3D() {
+            scene = new THREE.Scene();
+            scene.background = new THREE.Color(0x0a0a0c);
+            scene.fog = new THREE.Fog(0x0a0a0c, 2, 28); 
+
+            camera = new THREE.PerspectiveCamera(70, window.innerWidth / window.innerHeight, 0.1, 100);
+            camera.rotation.order = "YXZ"; 
+
+            renderer = new THREE.WebGLRenderer({ antialias: true, powerPreference: "high-performance" });
+            renderer.setSize(window.innerWidth, window.innerHeight);
+            renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2)); 
+            renderer.shadowMap.enabled = true;
+            renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+            renderer.outputEncoding = THREE.sRGBEncoding; 
+            renderer.toneMapping = THREE.ACESFilmicToneMapping; 
+            renderer.toneMappingExposure = 1.1;
+
+            document.getElementById('canvas-container').appendChild(renderer.domElement);
+
+            document.getElementById('btn-roam').addEventListener('click', startFreeRoam);
+            document.getElementById('btn-tour').addEventListener('click', () => startTour(false));
+            document.getElementById('btn-view-art').addEventListener('click', openArtwork);
+            
+            document.getElementById('tour-next').addEventListener('click', () => changeSlide(1));
+            document.getElementById('tour-prev').addEventListener('click', () => changeSlide(-1));
+            document.getElementById('tour-exit').addEventListener('click', exitTour);
+            document.getElementById('btn-restart').addEventListener('click', resetApp);
+
+            if(isMobile) setupMobileControls();
+            else setupDesktopControls();
+
+            buildEnvironment();
+            window.addEventListener('resize', onWindowResize, false);
+        }
+
+        function setupDesktopControls() {
+            document.addEventListener('keydown', e => {
+                if(!isFreeRoam) return;
+                if (e.code === 'KeyW' || e.code === 'ArrowUp') moveForward = true;
+                if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveLeft = true;
+                if (e.code === 'KeyS' || e.code === 'ArrowDown') moveBackward = true;
+                if (e.code === 'KeyD' || e.code === 'ArrowRight') moveRight = true;
+            });
+            document.addEventListener('keyup', e => {
+                if (e.code === 'KeyW' || e.code === 'ArrowUp') moveForward = false;
+                if (e.code === 'KeyA' || e.code === 'ArrowLeft') moveLeft = false;
+                if (e.code === 'KeyS' || e.code === 'ArrowDown') moveBackward = false;
+                if (e.code === 'KeyD' || e.code === 'ArrowRight') moveRight = false;
+            });
+
+            renderer.domElement.addEventListener('mousedown', () => {
+                if(isFreeRoam && !isPointerLocked) {
+                    try { renderer.domElement.requestPointerLock(); } catch(e) {}
+                }
+            });
+
+            document.addEventListener('pointerlockchange', () => {
+                isPointerLocked = document.pointerLockElement === renderer.domElement;
+            });
+
+            document.addEventListener('mousemove', e => {
+                if (isPointerLocked && isFreeRoam) {
+                    yaw -= e.movementX * 0.002;
+                    pitch -= e.movementY * 0.002;
+                    pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+                    camera.rotation.set(pitch, yaw, 0);
+                }
+            });
+        }
+
+        function setupMobileControls() {
+            renderer.domElement.addEventListener('touchstart', e => {
+                touchStartX = e.touches[0].pageX;
+                touchStartY = e.touches[0].pageY;
+            }, {passive: true});
+            
+            renderer.domElement.addEventListener('touchmove', e => {
+                if(!isFreeRoam) return;
+                let dx = e.touches[0].pageX - touchStartX;
+                let dy = e.touches[0].pageY - touchStartY;
+                yaw -= dx * 0.005;
+                pitch -= dy * 0.005;
+                pitch = Math.max(-Math.PI/2, Math.min(Math.PI/2, pitch));
+                camera.rotation.set(pitch, yaw, 0);
+                touchStartX = e.touches[0].pageX;
+                touchStartY = e.touches[0].pageY;
+            }, {passive: true});
+
+            const setupBtn = (id, prop) => {
+                const btn = document.getElementById(id);
+                btn.addEventListener('touchstart', (e) => { e.preventDefault(); window[prop] = true; });
+                btn.addEventListener('touchend', (e) => { e.preventDefault(); window[prop] = false; });
+            };
+            setupBtn('btn-up', 'moveForward');
+            setupBtn('btn-down', 'moveBackward');
+            setupBtn('btn-left', 'moveLeft');
+            setupBtn('btn-right', 'moveRight');
+        }
+
+        function buildEnvironment() {
+            scene.add(new THREE.AmbientLight(0xffffff, 0.4));
+            const dirLight = new THREE.DirectionalLight(0xffffff, 0.5);
+            dirLight.position.set(5, 10, 5); dirLight.castShadow = true;
+            scene.add(dirLight);
+
+            const pt1 = new THREE.PointLight(0xeab308, 0.3, 15); pt1.position.set(-5, 3.4, -5); scene.add(pt1); 
+            const pt2 = new THREE.PointLight(0x00ccff, 0.3, 15); pt2.position.set(5, 3.4, 5); scene.add(pt2);
+            const pt3 = new THREE.PointLight(0xffffff, 0.5, 15); pt3.position.set(-5, 3.4, 5); scene.add(pt3);
+
+            const particleCount = 400;
+            const particleGeo = new THREE.BufferGeometry();
+            const posArray = new Float32Array(particleCount * 3);
+            const colorsArray = new Float32Array(particleCount * 3);
+            for(let i=0; i<particleCount; i++) {
+                posArray[i*3] = (Math.random() - 0.5) * 30;
+                posArray[i*3+1] = (Math.random() - 0.5) * 30;
+                posArray[i*3+2] = (Math.random() - 0.5) * 30;
+                let isGold = Math.random() > 0.5;
+                colorsArray[i*3] = isGold ? 0.91 : 0.06; 
+                colorsArray[i*3+1] = isGold ? 0.70 : 0.72; 
+                colorsArray[i*3+2] = isGold ? 0.03 : 0.50; 
+            }
+            particleGeo.setAttribute('position', new THREE.BufferAttribute(posArray, 3));
+            particleGeo.setAttribute('color', new THREE.BufferAttribute(colorsArray, 3));
+            const particleMat = new THREE.PointsMaterial({
+                size: 0.05, vertexColors: true, transparent: true, opacity: 0.6, blending: THREE.AdditiveBlending
+            });
+            window.ambientParticles = new THREE.Points(particleGeo, particleMat);
+            window.ambientParticles.position.y = 1.5;
+            scene.add(window.ambientParticles);
+
+            const floorMat = new THREE.MeshStandardMaterial({ color: 0x151515, roughness: 0.15, metalness: 0.3 }); 
+            const wallEpsMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.8, metalness: 0.05 }); 
+            const darkWallMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.5, metalness: 0.2 }); 
+            window.ceilingMat = new THREE.MeshStandardMaterial({ color: 0x111111, roughness: 0.6, transparent: true, opacity: 0.0 }); 
+
+            const glassMat = new THREE.MeshPhysicalMaterial({
+                color: 0xffffff, metalness: 0.1, roughness: 0.05, opacity: 0.25,
+                transparent: true, transmission: 0.9, clearcoat: 1.0, side: THREE.DoubleSide
+            });
+            const deskMat = new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.1, metalness: 0.1 });
+            const legMat = new THREE.MeshStandardMaterial({ color: 0x222222, metalness: 0.8 });
+            const seatGreyMat = new THREE.MeshStandardMaterial({ color: 0x6b7280, roughness: 0.6 }); 
+            const tvFrameMat = new THREE.MeshStandardMaterial({ color: 0x050505, roughness: 0.2 });
+            const tvScreenMat = new THREE.MeshBasicMaterial({ color: 0x3b82f6 });
+
+            const floor = new THREE.Mesh(new THREE.PlaneGeometry(15, 16.3), floorMat);
+            floor.rotation.x = -Math.PI / 2; floor.receiveShadow = true; scene.add(floor);
+            
+            const ceiling = new THREE.Mesh(new THREE.PlaneGeometry(15, 16.3), window.ceilingMat);
+            ceiling.rotation.x = Math.PI / 2; ceiling.position.y = 3.6; scene.add(ceiling);
+
+            function createW(w, h, d, x, y, z, mat) {
+                const mesh = new THREE.Mesh(new THREE.BoxGeometry(w, h, d), mat);
+                mesh.position.set(x, y, z); mesh.castShadow = true; mesh.receiveShadow = true;
+                scene.add(mesh); return mesh;
+            }
+
+            function createOfficeChair(x, z, angle) {
+                const group = new THREE.Group();
+                const seat = new THREE.Mesh(new THREE.BoxGeometry(0.5, 0.05, 0.5), seatGreyMat); seat.position.y = 0.45; seat.castShadow = true; group.add(seat);
+                const back = new THREE.Mesh(new THREE.BoxGeometry(0.45, 0.5, 0.05), seatGreyMat); back.position.set(0, 0.75, -0.22); back.rotation.x = -0.1; back.castShadow = true; group.add(back);
+                const headrest = new THREE.Mesh(new THREE.BoxGeometry(0.3, 0.1, 0.05), seatGreyMat); headrest.position.set(0, 1.05, -0.25); group.add(headrest);
+                const column = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.4), legMat); column.position.y = 0.2; group.add(column);
+                const base = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.25, 0.05), legMat); base.position.y = 0.025; group.add(base);
+                const armL = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.3), legMat); armL.position.set(-0.25, 0.6, -0.05); group.add(armL);
+                const armR = new THREE.Mesh(new THREE.BoxGeometry(0.05, 0.2, 0.3), legMat); armR.position.set(0.25, 0.6, -0.05); group.add(armR);
+                group.position.set(x, 0, z); group.rotation.y = angle; scene.add(group);
+            }
+            function createTable(w, d, x, z) {
+                createW(w, 0.05, d, x, 0.75, z, deskMat);
+                createW(0.05, 0.75, 0.05, x - w/2 + 0.1, 0.375, z - d/2 + 0.1, legMat);
+                createW(0.05, 0.75, 0.05, x + w/2 - 0.1, 0.375, z - d/2 + 0.1, legMat);
+                createW(0.05, 0.75, 0.05, x - w/2 + 0.1, 0.375, z + d/2 - 0.1, legMat);
+                createW(0.05, 0.75, 0.05, x + w/2 - 0.1, 0.375, z + d/2 - 0.1, legMat);
+            }
+            function createModularTablePart(w, d, x, z, dirX, dirZ) {
+                const group = new THREE.Group();
+                const top = new THREE.Mesh(new THREE.BoxGeometry(w, 0.05, d), deskMat);
+                top.position.y = 0.75; top.castShadow = true; top.receiveShadow = true; group.add(top);
+                const l1 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.75), legMat); l1.position.set(-w/2+0.1, 0.375, -d/2+0.1); group.add(l1);
+                const l2 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.75), legMat); l2.position.set(w/2-0.1, 0.375, -d/2+0.1); group.add(l2);
+                const l3 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.75), legMat); l3.position.set(-w/2+0.1, 0.375, d/2-0.1); group.add(l3);
+                const l4 = new THREE.Mesh(new THREE.CylinderGeometry(0.025, 0.025, 0.75), legMat); l4.position.set(w/2-0.1, 0.375, d/2-0.1); group.add(l4);
+                
+                group.position.set(x, 0, z); scene.add(group);
+                if (!window.modularDesks) window.modularDesks = [];
+                window.modularDesks.push({ mesh: group, startX: x, startZ: z, dirX: dirX, dirZ: dirZ });
+            }
+            function createTV(x, y, z, angle) {
+                const group = new THREE.Group();
+                const frame = new THREE.Mesh(new THREE.BoxGeometry(1.6, 0.9, 0.08), tvFrameMat);
+                const screen = new THREE.Mesh(new THREE.PlaneGeometry(1.5, 0.8), tvScreenMat); screen.position.z = 0.041;
+                group.add(frame); group.add(screen); group.position.set(x, y, z); group.rotation.y = angle; scene.add(group);
+            }
+            function createSofa(w, d, x, z, angle) {
+                const group = new THREE.Group();
+                const seat = new THREE.Mesh(new THREE.BoxGeometry(w, 0.4, d), seatGreyMat); seat.position.y = 0.2; group.add(seat);
+                const back = new THREE.Mesh(new THREE.BoxGeometry(w, 0.5, 0.2), seatGreyMat); back.position.set(0, 0.65, -d/2 + 0.1); group.add(back);
+                const armL = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, d), seatGreyMat); armL.position.set(-w/2 + 0.1, 0.3, 0); group.add(armL);
+                const armR = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.6, d), seatGreyMat); armR.position.set(w/2 - 0.1, 0.3, 0); group.add(armR);
+                group.position.set(x, 0, z); group.rotation.y = angle; scene.add(group);
+            }
+            function createRoundTable(r, x, z) {
+                const group = new THREE.Group();
+                const top = new THREE.Mesh(new THREE.CylinderGeometry(r, r, 0.05, 32), deskMat); top.position.y = 0.75; group.add(top);
+                const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 0.75, 16), legMat); leg.position.y = 0.375; group.add(leg);
+                const base = new THREE.Mesh(new THREE.CylinderGeometry(r*0.6, r*0.6, 0.02, 32), legMat); base.position.y = 0.01; group.add(base);
+                group.position.set(x, 0, z); scene.add(group);
+            }
+            function createRackDisplay(x, z) {
+                const group = new THREE.Group();
+                const core = new THREE.Mesh(new THREE.CylinderGeometry(0.8, 0.8, 3.6, 32), wallEpsMat); core.position.y = 1.8; group.add(core);
+                const shelfMat = new THREE.MeshStandardMaterial({color: 0xeeeeee, roughness: 0.3});
+                for(let i=1; i<=3; i++) {
+                    const shelf = new THREE.Mesh(new THREE.CylinderGeometry(1.3, 1.3, 0.05, 32), shelfMat);
+                    shelf.position.y = 0.8 * i + 0.4; group.add(shelf);
+                }
+                group.position.set(x, 0, z); scene.add(group);
+            }
+
+            // 1. Perimeter (15m x 16.3m)
+            createW(15, 3.6, 0.2, 0, 1.8, -8.15, darkWallMat); 
+            createW(15, 3.6, 0.2, 0, 1.8, 8.15, darkWallMat);  
+            createW(0.2, 3.6, 16.3, -7.5, 1.8, 0, darkWallMat); 
+            createW(0.2, 3.6, 16.3, 7.5, 1.8, 0, darkWallMat);  
+
+            const gridX = [-4.6, -1.9, 0.9, 1.7];
+            const gridZ = [-4.8, -1.4, 2.8, 6.3];
+            gridX.forEach(gx => { gridZ.forEach(gz => { createW(0.3, 3.6, 0.3, gx, 1.8, gz, darkWallMat); }); });
+
+            // 2. Meeting Room (Bottom Left)
+            createW(0.012, 3.6, 7.0, -3.8, 1.8, 4.0, glassMat); 
+            createW(3.7, 3.6, 0.2, -5.65, 1.8, 0.5, wallEpsMat); 
+            createTable(2.0, 4.0, -5.65, 4.0); // Spaced Correctly
+            createTV(-7.4, 1.4, 4.0, Math.PI / 2); 
+            for(let i=0; i<5; i++) {
+                let zPos = 2.4 + (i*0.8);
+                createOfficeChair(-7.1, zPos, Math.PI/2); // Detached left
+                createOfficeChair(-4.2, zPos, -Math.PI/2); // Detached right
+            }
+
+            // 3. Communal Space (Mid Left)
+            // Puzzle Table: 4 pieces forming a flexible collaborative workspace
+            createModularTablePart(1.5, 0.6, -6.4, -1.8, -1, -1);
+            createModularTablePart(1.5, 0.6, -4.9, -1.8, 1, -1);
+            createModularTablePart(1.5, 0.6, -6.4, -1.2, -1, 1);
+            createModularTablePart(1.5, 0.6, -4.9, -1.2, 1, 1);
+
+            // Spaced Chairs around the puzzle table
+            createOfficeChair(-6.4, -2.7, 0); 
+            createOfficeChair(-4.9, -2.7, 0); 
+            createOfficeChair(-6.4, -0.3, Math.PI); 
+            createOfficeChair(-4.9, -0.3, Math.PI);
+            createOfficeChair(-7.5, -1.5, Math.PI/2);
+            createOfficeChair(-3.8, -1.5, -Math.PI/2);
+
+            // 4. Mini Stage (Top Left)
+            const stageMat = new THREE.MeshStandardMaterial({color: 0x111111, roughness: 0.9});
+            const stage = new THREE.Mesh(new THREE.BoxGeometry(3.5, 0.3, 3.0), stageMat);
+            stage.position.set(-5.65, 0.15, -6.5); scene.add(stage);
+
+            // 5. Office Room (Top Right)
+            createW(4.5, 3.6, 0.012, 5.25, 1.8, -3.9, glassMat); 
+            createW(0.2, 3.6, 4.2, 3.0, 1.8, -6.0, wallEpsMat); 
+            createTable(1.5, 0.8, 4.5, -5.5);
+            createTable(1.5, 0.8, 6.2, -5.5);
+            createOfficeChair(4.5, -4.7, Math.PI); createOfficeChair(4.5, -6.3, 0);
+            createOfficeChair(6.2, -4.7, Math.PI); createOfficeChair(6.2, -6.3, 0);
+
+            // 6. Pantry (Mid Right)
+            createW(2.5, 1.0, 0.8, 6.0, 0.5, -1.0, darkWallMat); 
+            createW(0.8, 1.0, 1.5, 5.15, 0.5, -1.35, darkWallMat); 
+
+            // 7. Seating Area 2 (Top Center)
+            createSofa(2.0, 0.8, 1.0, -7.0, Math.PI);
+            createRoundTable(0.4, 1.0, -5.5);
+            createOfficeChair(0.3, -5.5, Math.PI/2);
+            createOfficeChair(1.7, -5.5, -Math.PI/2);
+
+            // 8. Central Rack Display
+            createRackDisplay(2.5, 0.0);
+
+            // 9. Seating Area 3 (Bottom Right - 2-Tier Tribune)
+            createW(0.8, 0.8, 4.0, 7.0, 0.4, 2.5, darkWallMat); // East Tier 2
+            createW(0.8, 0.4, 4.0, 6.2, 0.2, 2.5, seatGreyMat); // East Tier 1
+            createW(2.5, 0.8, 0.8, 5.35, 0.4, 4.6, darkWallMat); // South Tier 2
+            createW(2.5, 0.4, 0.8, 5.35, 0.2, 3.8, seatGreyMat); // South Tier 1
+            const cush1 = new THREE.MeshStandardMaterial({ color: 0xeab308, roughness: 0.8 }); 
+            const cush2 = new THREE.MeshStandardMaterial({ color: 0x10b981, roughness: 0.8 }); 
+            createW(0.5, 0.05, 0.5, 6.2, 0.425, 1.5, cush1);
+            createW(0.5, 0.05, 0.5, 6.2, 0.425, 2.5, cush2);
+            createW(0.5, 0.05, 0.5, 5.0, 0.425, 3.8, cush1);
+
+            // 10. Reception (Bottom Right Corner)
+            createW(3.0, 1.1, 0.6, 5.5, 0.55, 6.0, deskMat); 
+            createOfficeChair(5.5, 6.8, Math.PI); // Receptionist Chair
+            createW(2.0, 3.6, 0.1, 5.5, 1.8, 5.0, wallEpsMat); 
+
+            // 11. Lobby / Seating Area 1 (Bottom Center)
+            createRoundTable(0.4, -2.0, 6.5);
+            createRoundTable(0.4, -0.5, 6.5);
+            createRoundTable(0.4, 1.0, 6.5);
+            createSofa(3.5, 0.8, -0.5, 7.5, Math.PI); 
+
+            // 12. Garuda Ornament in Lobby
+            const garudaGroup = new THREE.Group();
+            const wingMat = new THREE.MeshStandardMaterial({ color: 0xeab308, emissive: 0xca8a04, emissiveIntensity: 0.4, metalness: 1, roughness: 0.2, side: THREE.DoubleSide });
+            const coreGeo = new THREE.OctahedronGeometry(0.3, 0);
+            const coreObj = new THREE.Mesh(coreGeo, wingMat);
+            coreObj.scale.set(1, 1.5, 0.5);
+            garudaGroup.add(coreObj);
+            const wingGeo = new THREE.ConeGeometry(0.4, 1.5, 3);
+            const wingL = new THREE.Mesh(wingGeo, wingMat);
+            wingL.position.set(-0.5, 0.2, 0);
+            wingL.rotation.z = -Math.PI / 3;
+            garudaGroup.add(wingL);
+            const wingR = new THREE.Mesh(wingGeo, wingMat);
+            wingR.position.set(0.5, 0.2, 0);
+            wingR.rotation.z = Math.PI / 3;
+            garudaGroup.add(wingR);
+            const headGeo = new THREE.ConeGeometry(0.2, 0.6, 4);
+            const head = new THREE.Mesh(headGeo, wingMat);
+            head.position.set(0, 0.6, 0);
+            garudaGroup.add(head);
+
+            garudaGroup.position.set(0, 2.5, 7.9); // South wall center
+            scene.add(garudaGroup);
+            window.garudaOrnament = garudaGroup;
+            
+            // Spotlight to illuminate the Garuda
+            const garudaLight = new THREE.SpotLight(0xeab308, 1.5, 10, Math.PI/4, 0.5, 1);
+            garudaLight.position.set(0, 4, 6);
+            garudaLight.target = garudaGroup;
+            scene.add(garudaLight);
+            scene.add(garudaLight.target);
+        }
+
+        // --- VR Intro Sequence & Interaction Logic ---
+        function startIntroSequence() {
+            document.getElementById('blocker').style.display = 'none';
+            isIntroSequence = true;
+            introPhase = 1;
+            isTourMode = false;
+            isFreeRoam = false;
+            
+            // Phase 1: Start High Above (Overview Map Angle)
+            camera.position.set(0, 18, 5);
+            currentLookAt.set(0, 0, 2);
+            camera.lookAt(currentLookAt);
+            
+            // Phase 2: VR Walkthrough towards Garuda
+            setTimeout(() => {
+                introPhase = 2;
+                camera.position.set(0, 1.6, -3); // Start further back in lobby
+                targetCamPos.set(0, 1.6, 5.5);   // Walk towards Garuda
+                targetCamLookAt.set(0, 2.5, 7.9);
+                document.getElementById('vr-overlay').style.display = 'flex';
+            }, 3000);
+
+            // Phase 3: Launch Presentation Tour
+            setTimeout(() => {
+                document.getElementById('vr-overlay').style.display = 'none';
+                isIntroSequence = false;
+                startTour(true);
+            }, 10000); // Extended for immersive walk
+        }
+
+        function startFreeRoam() {
+            document.getElementById('blocker').style.display = 'none';
+            document.querySelector('.hud-overlay').style.display = 'block';
+            if(isMobile) document.getElementById('mobile-controls').style.display = 'block';
+            if(!isMobile) {
+                try { renderer.domElement.requestPointerLock(); } catch(e) {}
+            }
+            isFreeRoam = true;
+            isTourMode = false;
+            isIntroSequence = false;
+            if (window.ceilingMat) window.ceilingMat.opacity = 1.0;
+        }
+
+        function startTour(isFromIntro = false) {
+            document.getElementById('blocker').style.display = 'none';
+            document.querySelector('.hud-overlay').style.display = 'none';
+            document.getElementById('mobile-controls').style.display = 'none';
+            isFreeRoam = false;
+            isTourMode = true;
+            isIntroSequence = false;
+            if (!isFromIntro) {
+                camera.getWorldDirection(currentLookAt);
+                currentLookAt.add(camera.position);
+            }
+            changeSlide(0, true);
+            if (isFromIntro) setTimeout(() => { document.getElementById('presentation-ui').style.display = 'flex'; }, 2000);
+            else document.getElementById('presentation-ui').style.display = 'flex';
+        }
+
+        function exitTour() {
+            document.getElementById('presentation-ui').style.display = 'none';
+            document.getElementById('blocker').style.display = 'flex';
+            isTourMode = false;
+        }
+
+        function changeSlide(dir, forceIndex = false) {
+            const slidePanel = document.getElementById('slide-panel');
+            slidePanel.classList.remove('visible');
+            setTimeout(() => {
+                if (forceIndex) currentSlide = 0;
+                else currentSlide += dir;
+
+                if (currentSlide >= slides.length) { triggerClosingSequence(); return; }
+                if (currentSlide < 0) currentSlide = 0;
+
+                const slide = slides[currentSlide];
+                document.getElementById('slide-subtitle').textContent = slide.subtitle;
+                document.getElementById('slide-title').textContent = slide.title;
+                document.getElementById('slide-desc').textContent = slide.desc;
+                document.getElementById('slide-stats').innerHTML = slide.stats;
+                
+                const badge = document.getElementById('culture-badge');
+                if(slide.hasArt) badge.classList.add('active');
+                else badge.classList.remove('active');
+
+                document.getElementById('art-trigger-container').style.display = slide.hasArt ? 'block' : 'none';
+
+                targetCamPos.copy(slide.camPos);
+                targetCamLookAt.copy(slide.lookAt);
+
+                slidePanel.classList.add('visible');
+            }, 400);
+        }
+
+        // --- Interactive Artwork Games Logic ---
+        let r1 = 90, r2 = 180, r3 = 270;
+        let syncProgress = 0, syncInterval = null;
+        let flightProgress = 0, flightInterval = null;
+        let nodesActive = [false, false, false];
+
+        function openArtwork() {
+            document.getElementById('artwork-overlay').style.display = 'flex';
+            document.querySelectorAll('.art-view').forEach(v => v.classList.remove('active'));
+            const slide = slides[currentSlide];
+            document.getElementById('art-view-' + slide.artId).classList.add('active');
+            lockGameClose();
+
+            // Reset Games States
+            if(slide.artId === 0) {
+                r1 = 90; r2 = 180; r3 = 270;
+                document.getElementById('batik-ring1').style.transform = `rotate(${r1}deg)`;
+                document.getElementById('batik-ring2').style.transform = `rotate(${r2}deg)`;
+                document.getElementById('batik-ring3').style.transform = `rotate(${r3}deg)`;
+                document.getElementById('art-story-0').classList.add('hidden');
+            } else if(slide.artId === 1) {
+                syncProgress = 0;
+                document.getElementById('topeng-fill').style.height = '0%';
+                document.getElementById('art-story-1').classList.add('hidden');
+            } else if(slide.artId === 2) {
+                document.querySelector('input[type=range]').value = 0;
+                document.getElementById('wayang-svg').style.opacity = 0;
+                document.getElementById('wayang-svg').style.filter = 'drop-shadow(0 0 10px rgba(103,232,249,0.5))';
+                document.getElementById('wayang-glow').style.opacity = 0;
+                document.getElementById('art-story-2').classList.add('hidden');
+            } else if(slide.artId === 3) {
+                nodesActive = [false, false, false];
+                document.querySelectorAll('.node-btn').forEach(b => b.classList.remove('active'));
+                document.getElementById('art-story-3').classList.add('hidden');
+            } else if(slide.artId === 4) {
+                flightProgress = 0;
+                document.getElementById('flight-bar').style.width = '0%';
+                document.getElementById('art-story-4').classList.add('hidden');
+                clearInterval(flightInterval);
+                flightInterval = setInterval(() => {
+                    flightProgress -= 3;
+                    if(flightProgress < 0) flightProgress = 0;
+                    document.getElementById('flight-bar').style.width = flightProgress + '%';
+                }, 200);
+            }
+        }
+
+        // Game 0: Batik Rotate
+        function rotateBatik() {
+            r1 = (r1 + 90) % 360; r2 = (r2 + 45) % 360; r3 = (r3 + 135) % 360;
+            document.getElementById('batik-ring1').style.transform = `rotate(${r1}deg)`;
+            document.getElementById('batik-ring2').style.transform = `rotate(${r2}deg)`;
+            document.getElementById('batik-ring3').style.transform = `rotate(${r3}deg)`;
+            if(r1 === 0 && (r2 === 0 || r2 === 180) && (r3 === 0 || r3 === 90 || r3 === 180 || r3 === 270)) { 
+                document.getElementById('art-story-0').classList.remove('hidden');
+                unlockGameClose();
+            } else if (Math.random() > 0.6) { // Generous win condition for demo purposes
+                document.getElementById('art-story-0').classList.remove('hidden');
+                unlockGameClose();
+            }
+        }
+
+        // Game 1: Topeng Sync
+        function startSync() {
+            clearInterval(syncInterval);
+            syncInterval = setInterval(() => {
+                syncProgress += 5;
+                if(syncProgress >= 100) {
+                    syncProgress = 100;
+                    clearInterval(syncInterval);
+                    document.getElementById('art-story-1').classList.remove('hidden');
+                    unlockGameClose();
+                }
+                document.getElementById('topeng-fill').style.height = syncProgress + '%';
+            }, 50);
+        }
+        function stopSync() { clearInterval(syncInterval); }
+
+        // Game 2: Wayang Focus (Crystal Gunungan)
+        function focusWayang(val) {
+            let opacity = 0;
+            if(val > 40 && val < 60) opacity = 1 - Math.abs(50 - val)/10;
+            
+            document.getElementById('wayang-svg').style.opacity = opacity;
+            document.getElementById('wayang-svg').style.filter = `drop-shadow(0 0 ${opacity * 20}px rgba(103,232,249,0.8))`;
+            document.getElementById('wayang-glow').style.opacity = opacity * 0.5;
+            
+            if(opacity > 0.9) {
+                document.getElementById('art-story-2').classList.remove('hidden');
+                unlockGameClose();
+            }
+        }
+
+        // Game 3: Candi Nodes
+        function toggleNode(btn) {
+            btn.classList.add('active');
+            let allActive = true;
+            document.querySelectorAll('.node-btn').forEach(b => { if(!b.classList.contains('active')) allActive = false; });
+            if(allActive) {
+                document.getElementById('art-story-3').classList.remove('hidden');
+                unlockGameClose();
+            }
+        }
+
+        // Game 4: Garuda Flight
+        function tapFlight() {
+            flightProgress += 15;
+            if(flightProgress >= 100) {
+                flightProgress = 100;
+                clearInterval(flightInterval);
+                document.getElementById('art-story-4').classList.remove('hidden');
+                unlockGameClose();
+            }
+            document.getElementById('flight-bar').style.width = flightProgress + '%';
+        }
+
+        function unlockGameClose() {
+            const btn = document.getElementById('btn-close-art');
+            btn.disabled = false;
+            btn.classList.remove('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+            btn.classList.add('bg-yellow-600', 'text-black', 'hover:bg-yellow-500');
+            btn.textContent = "Return to Innovation Hub";
+        }
+
+        function lockGameClose() {
+            const btn = document.getElementById('btn-close-art');
+            btn.disabled = true;
+            btn.classList.add('bg-gray-800', 'text-gray-500', 'cursor-not-allowed');
+            btn.classList.remove('bg-yellow-600', 'text-black', 'hover:bg-yellow-500');
+            btn.textContent = "Unlock To Proceed";
+        }
+
+        function closeArtwork() {
+            document.getElementById('artwork-overlay').style.display = 'none';
+        }
+
+        function triggerClosingSequence() {
+            document.getElementById('presentation-ui').style.display = 'none';
+            const closingLoader = document.getElementById('closing-loader');
+            closingLoader.classList.remove('opacity-0', 'invisible');
+            closingLoader.classList.add('opacity-100', 'visible');
+        }
+
+        function resetApp() {
+            const closingLoader = document.getElementById('closing-loader');
+            closingLoader.classList.remove('opacity-100', 'visible');
+            closingLoader.classList.add('opacity-0', 'invisible');
+            document.getElementById('blocker').style.display = 'flex';
+            isTourMode = false;
+            isFreeRoam = false;
+            if (window.ceilingMat) window.ceilingMat.opacity = 1.0;
+        }
+
+        function onWindowResize() {
+            camera.aspect = window.innerWidth / window.innerHeight;
+            camera.updateProjectionMatrix();
+            renderer.setSize(window.innerWidth, window.innerHeight);
+        }
+
+        function animate() {
+            requestAnimationFrame(animate);
+            const time = performance.now();
+
+            if (window.ambientParticles) {
+                window.ambientParticles.rotation.y += 0.0003;
+                window.ambientParticles.position.y = 1.5 + Math.sin(time * 0.0005) * 0.1;
+            }
+
+            if (window.garudaOrnament) {
+                window.garudaOrnament.position.y = 2.5 + Math.sin(time * 0.002) * 0.05;
+                window.garudaOrnament.rotation.y = Math.sin(time * 0.001) * 0.1;
+            }
+
+            if (isIntroSequence) {
+                if (introPhase === 1) {
+                    camera.position.x += Math.sin(time * 0.0005) * 0.002;
+                    camera.position.z += Math.cos(time * 0.0005) * 0.002;
+                    camera.lookAt(currentLookAt);
+                } else if (introPhase === 2) {
+                    camera.position.lerp(targetCamPos, 0.015);
+                    
+                    // VR Walk Simulation (Head bob + sway)
+                    const walkBob = Math.sin(time * 0.006) * 0.06;
+                    const vrSway = Math.cos(time * 0.002) * 0.8;
+                    camera.position.y = 1.6 + walkBob;
+                    
+                    targetCamLookAt.x = vrSway;
+                    currentLookAt.lerp(targetCamLookAt, 0.05);
+                    camera.lookAt(currentLookAt);
+                }
+            } else if (isTourMode) {
+                camera.position.lerp(targetCamPos, 0.02);
+                currentLookAt.lerp(targetCamLookAt, 0.02);
+                camera.lookAt(currentLookAt);
+                targetCamPos.x += Math.sin(time * 0.001) * 0.001;
+                targetCamPos.y += Math.cos(time * 0.0008) * 0.0005;
+            } else if (isFreeRoam) {
+                const delta = (time - prevTime) / 1000;
+                velocity.x -= velocity.x * 10.0 * delta;
+                velocity.z -= velocity.z * 10.0 * delta;
+
+                direction.z = Number(moveForward) - Number(moveBackward);
+                direction.x = Number(moveRight) - Number(moveLeft);
+                direction.normalize();
+
+                const speed = 20.0;
+                if (moveForward || moveBackward) velocity.z -= direction.z * speed * delta;
+                if (moveLeft || moveRight) velocity.x -= direction.x * speed * delta;
+
+                const fwd = new THREE.Vector3(0, 0, -1).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+                const right = new THREE.Vector3(1, 0, 0).applyAxisAngle(new THREE.Vector3(0,1,0), yaw);
+                
+                camera.position.addScaledVector(fwd, -velocity.z * delta);
+                camera.position.addScaledVector(right, velocity.x * delta);
+
+                if(camera.position.x < -7.0) camera.position.x = -7.0;
+                if(camera.position.x > 7.0) camera.position.x = 7.0;
+                if(camera.position.z < -7.5) camera.position.z = -7.5;
+                if(camera.position.z > 7.5) camera.position.z = 7.5;
+                camera.position.y = 1.6; 
+            }
+
+            if (window.ceilingMat) {
+                if (camera.position.y < 4.5 && !isIntroSequence) window.ceilingMat.opacity = Math.min(1.0, window.ceilingMat.opacity + 0.02);
+                else window.ceilingMat.opacity = Math.max(0.0, window.ceilingMat.opacity - 0.02);
+            }
+
+            if (window.modularDesks && window.modularDesks.length > 0) {
+                const slideOffset = (Math.sin(time * 0.001) * 0.5 + 0.5) * 0.4; 
+                window.modularDesks.forEach(desk => {
+                    desk.mesh.position.x = desk.startX + desk.dirX * slideOffset;
+                    desk.mesh.position.z = desk.startZ + desk.dirZ * slideOffset;
+                });
+            }
+
+            prevTime = time;
+            renderer.render(scene, camera);
+        }
+    </script>
+</body>
+</html>
